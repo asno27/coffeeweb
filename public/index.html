@@ -81,6 +81,16 @@
                     <label class="block text-sm font-medium text-stone-600 mb-1">로스터리 제공 공식 정보</label>
                     <textarea id="roasteryInfo" rows="2" placeholder="컵 노트, 가공 방식(Process), 재배 고도 등" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-700 text-sm"></textarea>
                 </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-stone-600 mb-1">로스팅 날짜</label>
+                        <input type="date" id="roastDate" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-700 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-stone-600 mb-1">구매일</label>
+                        <input type="date" id="purchaseDate" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-700 text-sm">
+                    </div>
+                </div>
                 <div>
                     <label class="block text-sm font-medium text-stone-600 mb-1">원두 사진</label>
                     <input type="file" id="photo" accept="image/*" class="w-full text-sm text-stone-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-amber-50 file:text-amber-900 hover:file:bg-amber-100">
@@ -269,21 +279,35 @@
                     : `<span class="text-amber-800 font-semibold">☕</span>`;
                 
                 const starStr = '★'.repeat(bean.rating) + '☆'.repeat(5 - bean.rating);
+
+                // 로스팅 후 경과일 계산 (신선도 뱃지)
+                let freshnessHtml = '';
+                if (bean.roastDate) {
+                    const days = Math.floor((new Date() - new Date(bean.roastDate)) / (1000 * 60 * 60 * 24));
+                    let badgeColor = 'bg-stone-100 text-stone-500';
+                    if (days <= 14) badgeColor = 'bg-green-100 text-green-700';
+                    else if (days <= 30) badgeColor = 'bg-amber-100 text-amber-700';
+                    else badgeColor = 'bg-red-100 text-red-600';
+                    freshnessHtml = `<span class="${badgeColor} text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">로스팅 ${days}일째</span>`;
+                }
                 
                 return `
                     <div onclick="document.getElementById('details-${bean.id}').classList.toggle('hidden')" 
                          class="bg-white rounded-xl shadow-sm border border-stone-200 overflow-hidden hover:shadow-md transition cursor-pointer p-4 h-fit">
                         
                         <!-- 닫혀있을 때 보이는 요약 정보 -->
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-3">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-3 min-w-0">
                                 <div class="flex items-center">${flagHtml}</div>
-                                <div>
+                                <div class="min-w-0">
                                     <span class="text-[11px] text-stone-400 font-medium block leading-none mb-1">${bean.roastery}</span>
-                                    <h3 class="text-sm font-bold text-stone-800 leading-snug">${bean.beanName}</h3>
+                                    <h3 class="text-sm font-bold text-stone-800 leading-snug truncate">${bean.beanName}</h3>
                                 </div>
                             </div>
-                            <span class="text-stone-400 text-xs select-none">▼</span>
+                            <div class="flex items-center gap-2 shrink-0">
+                                ${freshnessHtml}
+                                <span class="text-stone-400 text-xs select-none">▼</span>
+                            </div>
                         </div>
                         
                         <!-- 클릭하면 펼쳐지는 상세 항목 -->
@@ -292,6 +316,13 @@
                             ${bean.imageUrl ? `
                                 <div class="h-44 bg-stone-100 rounded-lg overflow-hidden">
                                     <img src="${bean.imageUrl}" alt="${bean.beanName}" class="w-full h-full object-cover">
+                                </div>
+                            ` : ''}
+
+                            ${(bean.roastDate || bean.purchaseDate) ? `
+                                <div class="flex gap-4 text-xs text-stone-500">
+                                    ${bean.roastDate ? `<span>🔥 로스팅일: <b class="text-stone-700">${bean.roastDate}</b></span>` : ''}
+                                    ${bean.purchaseDate ? `<span>🛒 구매일: <b class="text-stone-700">${bean.purchaseDate}</b></span>` : ''}
                                 </div>
                             ` : ''}
                             
@@ -351,6 +382,8 @@
             }
 
             document.getElementById('roasteryInfo').value = bean.roasteryInfo || "";
+            document.getElementById('roastDate').value = bean.roastDate || "";
+            document.getElementById('purchaseDate').value = bean.purchaseDate || "";
             document.getElementById('review').value = bean.review;
             
             currentRating = bean.rating;
@@ -413,6 +446,8 @@
             const beanType = document.querySelector('input[name="beanType"]:checked').value;
             const country = document.getElementById('country').value;
             const roasteryInfo = document.getElementById('roasteryInfo').value;
+            const roastDate = document.getElementById('roastDate').value;
+            const purchaseDate = document.getElementById('purchaseDate').value;
             const review = document.getElementById('review').value;
             const photoFile = document.getElementById('photo').files[0];
 
@@ -432,6 +467,8 @@
                     beanType,
                     country,
                     roasteryInfo,
+                    roastDate,
+                    purchaseDate,
                     review,
                     rating: currentRating,
                     imageUrl,
