@@ -1,0 +1,52 @@
+rules_version = "2";
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 로그인 기능이 없어서 '누가' 쓰는지는 구분할 수 없음.
+    // 대신 beans 컬렉션만 허용하고, 저장되는 데이터의 형태와 크기를 제한함.
+    match /beans/{beanId} {
+      allow read: if true;
+      allow create: if isValidBean(request.resource.data)
+                    && request.resource.data.createdAt is string;
+      allow update: if isValidBean(request.resource.data)
+                    && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if true;
+    }
+
+    function isValidBean(d) {
+      return d.keys().hasOnly([
+               'roastery', 'beanName', 'beanType', 'country', 'roasteryInfo',
+               'purchaseDate', 'roastDate', 'orderLink', 'review', 'rating',
+               'imageUrl', 'createdAt', 'updatedAt'
+             ])
+          && d.keys().hasAll(['roastery', 'beanName', 'rating'])
+          && isShortString(d.roastery, 100)
+          && isShortString(d.beanName, 200)
+          && optString(d, 'beanType', 50)
+          && optString(d, 'country', 50)
+          && optString(d, 'roasteryInfo', 2000)
+          && optString(d, 'purchaseDate', 30)
+          && optString(d, 'roastDate', 30)
+          && optString(d, 'orderLink', 2000)
+          && optString(d, 'review', 10000)
+          && optString(d, 'createdAt', 40)
+          && optString(d, 'updatedAt', 40)
+          && d.rating is number && d.rating >= 0 && d.rating <= 5
+          && (!('imageUrl' in d) || d.imageUrl == ''
+              || d.imageUrl.matches('^https://firebasestorage\\.googleapis\\.com/v0/b/coffee-web-508305\\.firebasestorage\\.app/o/coffee_images%2F.*'));
+    }
+
+    function isShortString(v, max) {
+      return v is string && v.size() <= max;
+    }
+
+    function optString(d, key, max) {
+      return !(key in d) || isShortString(d[key], max);
+    }
+
+    // 그 외 모든 경로는 차단
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,19 @@
+rules_version = "2";
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // 원두 사진: 누구나 볼 수 있음. 업로드는 새 이미지 파일(10MB 이하)만 허용.
+    // 기존 파일을 덮어쓰거나 지우는 것은 불가.
+    match /coffee_images/{fileName} {
+      allow read: if true;
+      allow create: if request.resource.size < 10 * 1024 * 1024
+                    && request.resource.contentType.matches('image/.*');
+      allow update, delete: if false;
+    }
+
+    // 그 외 모든 경로는 차단
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

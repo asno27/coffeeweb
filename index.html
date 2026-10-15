@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coffee Archive ☕</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@7.2.3/css/flag-icons.min.css"/>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/topojson@3"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+        body { font-family: 'Inter', 'Noto Sans KR', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a29e; }
+        @keyframes toastIn  { from { opacity:0; transform:translateY(-12px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes toastOut { from { opacity:1; transform:translateY(0); } to { opacity:0; transform:translateY(-12px); } }
+        .toast-enter { animation: toastIn .25s ease forwards; }
+        .toast-leave { animation: toastOut .3s ease forwards; }
+        #mapBottomPanel { transform: translateY(100%); transition: transform 0.35s cubic-bezier(0.4,0,0.2,1); }
+        #mapBottomPanel.open { transform: translateY(0); }
+    </style>
+</head>
+<body class="bg-stone-50 text-stone-800 h-screen overflow-hidden flex flex-col md:flex-row">
+
+    <!-- 토스트 -->
+    <div id="toastContainer" class="fixed top-5 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- 모바일 탑바 -->
+    <div class="md:hidden bg-stone-900 text-white h-14 flex items-center justify-between px-4 shrink-0 z-20 shadow-md">
+        <h1 class="font-bold tracking-wide">☕ Archive.</h1>
+        <div class="flex items-center gap-1.5">
+            <button onclick="openShoppingModal()" class="text-xs bg-[#03c75a] text-white px-2.5 py-1.5 rounded font-semibold">🛍️ 쇼핑</button>
+            <button id="mobileCardBtn" onclick="setView('card')" class="text-xs bg-stone-600 text-white px-2.5 py-1.5 rounded font-semibold">⊞ 카드</button>
+            <button id="mobileMapBtn" onclick="setView('map')" class="text-xs bg-stone-700 text-stone-400 px-2.5 py-1.5 rounded font-semibold">🗺️ 지도</button>
+            <button onclick="openModal()" class="text-xs bg-stone-100 text-stone-900 px-3 py-1.5 rounded font-bold ml-1">+ 추가</button>
+        </div>
+    </div>
+
+    <!-- 사이드바 -->
+    <aside class="hidden md:flex w-64 bg-stone-900 text-stone-300 flex-col shrink-0 shadow-lg z-20">
+        <div class="p-6 pb-4">
+            <h1 class="text-xl font-bold text-white tracking-wider">☕ ARCHIVE.</h1>
+            <p class="text-xs text-stone-500 mt-1 font-medium tracking-wide uppercase">Coffee Tracker</p>
+        </div>
+
+        <div class="px-4 mb-3">
+            <button onclick="openModal()" class="w-full bg-stone-100 hover:bg-white text-stone-900 py-2.5 rounded-lg text-sm font-semibold transition shadow flex items-center justify-center gap-2">
+                <span>+</span> 새로운 원두 기록
+            </button>
+        </div>
+
+        <!-- 뷰 전환 -->
+        <div class="px-4 mb-4 flex gap-2">
+            <button id="sideCardBtn" onclick="setView('card')" class="flex-1 text-xs py-2 rounded-lg font-semibold transition bg-stone-700 text-white">⊞ 카드</button>
+            <button id="sideMapBtn"  onclick="setView('map')"  class="flex-1 text-xs py-2 rounded-lg font-semibold transition text-stone-400 hover:text-white hover:bg-stone-800">🗺️ 지도</button>
+        </div>
+
+        <nav class="flex-1 px-3 space-y-1 overflow-y-auto" id="sideFilterNav">
+            <p class="px-3 text-[10px] font-bold text-stone-500 uppercase tracking-wider mb-2">필터</p>
+            <button id="filterAll"    class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium bg-stone-800 text-white transition">전체 원두 보기</button>
+            <button id="filterSingle" class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-stone-400 hover:text-white hover:bg-stone-800 transition">싱글 오리진</button>
+            <button id="filterBlend"  class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-stone-400 hover:text-white hover:bg-stone-800 transition">블렌드</button>
+            
+            <p class="px-3 text-[10px] font-bold text-stone-500 uppercase tracking-wider mt-6 mb-2">네이버 쇼핑</p>
+            <button onclick="openShoppingModal()" class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-[#03c75a] hover:text-white hover:bg-stone-800 transition flex items-center justify-between">
+                <span>🛍️ 로스터리 탐색</span>
+                <span class="text-stone-500 text-xs">›</span>
+            </button>
+        </nav>
+
+        <div class="p-4 border-t border-stone-800 text-[10px] text-stone-500 text-center uppercase tracking-wider font-semibold">v2.0 Map Edition</div>
+    </aside>
+
+    <!-- 모바일 필터 -->
+    <div id="mobileFilterBar" class="md:hidden bg-white border-b border-stone-200 px-4 py-2 flex gap-2 overflow-x-auto shrink-0 shadow-sm z-10">
+        <button id="filterAllMobile"    class="shrink-0 px-4 py-1.5 rounded-full text-sm font-medium bg-stone-900 text-white">전체보기</button>
+        <button id="filterSingleMobile" class="shrink-0 px-4 py-1.5 rounded-full text-sm font-medium bg-stone-100 text-stone-600 border border-stone-200">싱글오리진</button>
+        <button id="filterBlendMobile"  class="shrink-0 px-4 py-1.5 rounded-full text-sm font-medium bg-stone-100 text-stone-600 border border-stone-200">블렌드</button>
+    </div>
+
+    <!-- 메인 -->
+    <main class="flex-1 flex flex-col h-full overflow-hidden relative bg-stone-50/50">
+
+        <!-- 데스크탑 헤더 -->
+        <header class="bg-white/80 backdrop-blur-md border-b border-stone-200 h-16 flex items-center justify-between px-6 shrink-0 z-10 hidden md:flex">
+            <div class="flex-1 max-w-md relative group" id="searchBarWrapper">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 text-sm">🔍</span>
+                <input id="searchInput" type="text" placeholder="로스터리나 원두명으로 검색..." class="w-full pl-9 pr-4 py-2 bg-stone-100 border border-transparent focus:bg-white focus:border-stone-300 rounded-lg text-sm outline-none transition">
+            </div>
+            <div class="flex items-center gap-3" id="sortWrapper">
+                <div class="flex items-center gap-2 text-sm text-stone-500 font-medium">
+                    정렬:
+                    <select id="sortOrder" class="border border-stone-200 rounded-lg px-3 py-1.5 text-sm bg-white font-medium text-stone-700 cursor-pointer shadow-sm focus:outline-none">
+                        <option value="latest">최신 등록순</option>
+                        <option value="purchase">최근 구매순</option>
+                        <option value="stars">별점 높은순</option>
+                    </select>
+                </div>
+            </div>
+        </header>
+
+        <!-- 모바일 검색/정렬 -->
+        <div id="mobileSearchBar" class="md:hidden bg-stone-50 border-b border-stone-200 p-3 shrink-0 flex gap-2 z-10">
+            <input id="searchInputMobile" type="text" placeholder="검색..." class="flex-1 px-3 py-1.5 bg-white border border-stone-200 rounded-lg text-sm outline-none shadow-sm">
+            <select id="sortOrderMobile" class="border border-stone-200 rounded-lg px-2 py-1.5 text-sm bg-white outline-none font-medium text-stone-700 shadow-sm">
+                <option value="latest">최신순</option>
+                <option value="purchase">구매순</option>
+                <option value="stars">별점순</option>
+            </select>
+        </div>
+
+        <!-- 스크롤 영역 -->
+        <div class="flex-1 overflow-y-auto p-4 md:p-8" id="scrollArea">
+            <div class="max-w-[1400px] mx-auto">
+
+                <!-- 통계 -->
+                <div class="grid grid-cols-3 gap-4 mb-8">
+                    <div class="bg-white rounded-xl border border-stone-200 p-5 shadow-sm relative overflow-hidden group hover:border-stone-300 transition">
+                        <div class="absolute -right-4 -top-4 w-24 h-24 bg-stone-50 rounded-full opacity-50 group-hover:scale-110 transition duration-500"></div>
+                        <p class="text-xs text-stone-500 font-semibold uppercase tracking-wider mb-1 relative z-10">총 원두 수</p>
+                        <p class="text-3xl font-bold text-stone-900 relative z-10" id="statTotal">-</p>
+                    </div>
+                    <div class="bg-white rounded-xl border border-stone-200 p-5 shadow-sm relative overflow-hidden group hover:border-stone-300 transition">
+                        <div class="absolute -right-4 -top-4 w-24 h-24 bg-stone-50 rounded-full opacity-50 group-hover:scale-110 transition duration-500"></div>
+                        <p class="text-xs text-stone-500 font-semibold uppercase tracking-wider mb-1 relative z-10">평균 별점</p>
+                        <p class="text-3xl font-bold text-stone-900 relative z-10 flex items-center gap-1"><span id="statAvgRating">-</span><span class="text-yellow-400 text-xl">★</span></p>
+                    </div>
+                    <div class="bg-white rounded-xl border border-stone-200 p-5 shadow-sm relative overflow-hidden group hover:border-stone-300 transition">
+                        <div class="absolute -right-4 -top-4 w-24 h-24 bg-stone-50 rounded-full opacity-50 group-hover:scale-110 transition duration-500"></div>
+                        <p class="text-xs text-stone-500 font-semibold uppercase tracking-wider mb-1 relative z-10">최다 원산지</p>
+                        <p class="text-2xl font-bold text-stone-900 truncate relative z-10" id="statTopCountry">-</p>
+                    </div>
+                </div>
+
+                <!-- ===== 카드 뷰 ===== -->
+                <div id="cardViewSection">
+                    <div id="countryChipBar" class="hidden mb-6 flex flex-wrap gap-2 items-center bg-white p-3 rounded-xl border border-stone-200 shadow-sm">
+                        <span class="text-xs font-bold text-stone-400 uppercase tracking-wider mx-2">생산국 필터:</span>
+                        <div id="countryChips" class="flex flex-wrap gap-2"></div>
+                    </div>
+                    <div id="archiveGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></div>
+                </div>
+
+                <!-- ===== 지도 뷰 ===== -->
+                <div id="mapViewSection" class="hidden">
+                    <div class="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
+                        <div class="px-5 py-3 border-b border-stone-100 flex items-center justify-between">
+                            <div>
+                                <h2 class="font-bold text-stone-800 text-sm">🌍 세계 커피 아카이브</h2>
+                                <p class="text-xs text-stone-400 mt-0.5">스크롤로 확대 · 드래그로 이동 · 갈색 나라 클릭</p>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <div class="flex items-center gap-2 text-xs text-stone-500">
+                                    <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm inline-block bg-[#7c5c3e]"></span> 보유</span>
+                                    <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm inline-block bg-[#e0d8d0]"></span> 미보유</span>
+                                </div>
+                                <button onclick="if(window._mapZoomReset) window._mapZoomReset()" class="text-xs text-stone-400 hover:text-stone-700 border border-stone-200 hover:border-stone-400 px-2.5 py-1 rounded-lg transition font-medium bg-white shadow-sm">⟳ 초기화</button>
+                            </div>
+                        </div>
+                        <div id="mapSvgContainer" class="w-full bg-[#f5f0eb]" style="min-height:360px;"></div>
+                    </div>
+                    <div id="mapHint" class="mt-6 text-center text-stone-400 text-sm py-4">
+                        ☝️ 지도에서 나라를 눌러 해당 원두 목록을 확인하세요
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ===== 하단 슬라이드 패널 ===== -->
+        <div id="mapBottomPanel" class="fixed bottom-0 md:left-64 left-0 right-0 bg-white border-t-2 border-stone-200 shadow-2xl z-30">
+            <div class="flex items-center justify-between px-5 py-3 border-b border-stone-100">
+                <div class="flex items-center gap-2">
+                    <span id="panelFlag" class="text-xl"></span>
+                    <div>
+                        <h3 id="panelCountryName" class="font-bold text-stone-800 text-sm"></h3>
+                        <p id="panelBeanCount" class="text-xs text-stone-400 mt-0.5"></p>
+                    </div>
+                </div>
+                <button onclick="closeMapPanel()" class="text-stone-400 hover:text-stone-700 text-2xl leading-none font-light transition w-8 h-8 flex items-center justify-center rounded-full hover:bg-stone-100">×</button>
+            </div>
+            <div id="panelBeanList" class="overflow-y-auto px-4 py-3 flex flex-col gap-2" style="max-height:220px;"></div>
+        </div>
+    </main>
+
+    <!-- ===== 원두 상세 모달 (읽기 전용) ===== -->
+    <div id="beanDetailModal" class="fixed inset-0 z-[60] hidden items-center justify-center sm:p-4 opacity-0 transition-opacity duration-300">
+        <div class="absolute inset-0 bg-stone-900/60 backdrop-blur-sm cursor-pointer" onclick="closeBeanDetail()"></div>
+        <div id="beanDetailContent" class="bg-white sm:rounded-2xl shadow-2xl w-full max-w-xl max-h-full sm:max-h-[90vh] flex flex-col overflow-hidden relative z-10 transform scale-95 transition-transform duration-300">
+            <!-- 이미지 -->
+            <div id="detailImageArea" class="h-56 shrink-0 bg-stone-100 w-full overflow-hidden hidden">
+                <img id="detailImage" class="w-full h-full object-cover">
+            </div>
+            <!-- 헤더 -->
+            <div class="px-6 py-4 border-b border-stone-100 flex items-start justify-between bg-white shrink-0">
+                <div class="flex-1 pr-4">
+                    <p id="detailRoastery" class="text-[11px] font-bold text-stone-400 uppercase tracking-widest mb-1"></p>
+                    <h2 id="detailBeanName" class="text-lg font-bold text-stone-900 leading-snug"></h2>
+                    <div class="flex flex-wrap items-center gap-2 mt-2">
+                        <span id="detailCountryBadge" class="flex items-center gap-1.5 text-xs font-semibold text-stone-600 bg-stone-100 px-2 py-1 rounded-md"></span>
+                        <span id="detailPurchaseBadge" class="text-[10px] font-medium text-stone-400 bg-stone-50 px-2 py-1 rounded-md border border-stone-100 hidden"></span>
+                    </div>
+                </div>
+                <button onclick="closeBeanDetail()" class="text-stone-400 hover:text-stone-700 text-3xl leading-none font-light transition shrink-0">×</button>
+            </div>
+            <!-- 본문 -->
+            <div class="p-6 overflow-y-auto space-y-5">
+                <div class="flex items-center gap-2">
+                    <div id="detailStars" class="text-xl tracking-widest"></div>
+                    <span id="detailRatingNum" class="text-sm font-bold text-stone-500"></span>
+                </div>
+                <div id="detailReviewArea" class="hidden">
+                    <p class="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1.5">나의 리뷰</p>
+                    <p id="detailReview" class="text-sm text-stone-700 italic leading-relaxed bg-stone-50 p-4 rounded-xl border border-stone-100"></p>
+                </div>
+                <div id="detailNotesArea" class="hidden">
+                    <p class="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1.5">🏷️ 테이스팅 노트 / 정보</p>
+                    <p id="detailNotes" class="text-xs text-stone-700 leading-relaxed bg-stone-50 p-3 rounded-lg border border-stone-100"></p>
+                </div>
+                <div id="detailOrderArea" class="hidden">
+                    <a id="detailOrderLink" href="#" target="_blank" rel="noopener noreferrer" class="flex items-center justify-center gap-2 w-full py-2.5 bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold rounded-lg transition shadow-sm">🛒 주문 페이지 열기</a>
+                </div>
+                <div class="pt-2 flex gap-2 border-t border-stone-100">
+                    <button id="detailEditBtn" class="flex-1 border border-stone-300 text-stone-700 py-2.5 rounded-xl font-semibold text-sm hover:bg-stone-50 transition">✏️ 수정하기</button>
+                    <button id="detailDeleteBtn" class="px-5 border border-red-200 text-red-500 py-2.5 rounded-xl font-semibold text-sm hover:bg-red-50 transition">🗑️</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 로스터리 쇼핑 모달 ===== -->
+    <div id="shoppingModal" class="fixed inset-0 z-50 hidden items-center justify-center sm:p-4 opacity-0 transition-opacity duration-300">
+        <div class="absolute inset-0 bg-stone-900/60 backdrop-blur-sm cursor-pointer" onclick="closeShoppingModal()"></div>
+        <div id="shoppingContent" class="bg-white sm:rounded-2xl shadow-2xl w-full max-w-md max-h-full sm:max-h-[85vh] flex flex-col overflow-hidden relative z-10 transform scale-95 transition-transform duration-300">
+            <div class="border-b border-stone-100 px-6 py-5 flex items-center justify-between bg-white shrink-0">
+                <div>
+                    <h2 class="text-lg font-bold text-stone-900 flex items-center gap-2">🛍️ 로스터리 신상품 탐색</h2>
+                    <p class="text-[11px] text-stone-400 mt-1">내가 등록한 로스터리의 신상품을 네이버에서 검색합니다</p>
+                </div>
+                <button onclick="closeShoppingModal()" class="text-stone-400 hover:text-stone-700 text-3xl leading-none font-light transition">&times;</button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-1 bg-stone-50" id="shoppingRoasteryList">
+                <!-- 로스터리 목록 렌더링 영역 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 입력/수정 모달 ===== -->
+    <div id="formModal" class="fixed inset-0 z-50 hidden items-center justify-center sm:p-4 opacity-0 transition-opacity duration-300">
+        <div class="absolute inset-0 bg-stone-900/60 backdrop-blur-sm cursor-pointer" onclick="closeModal()"></div>
+        <div id="modalContent" class="bg-white sm:rounded-2xl shadow-2xl w-full max-w-xl max-h-full sm:max-h-[90vh] flex flex-col overflow-hidden relative z-10 transform scale-95 transition-transform duration-300">
+            <div class="border-b border-stone-100 px-6 py-4 flex items-center justify-between bg-white shrink-0">
+                <h2 id="formTitle" class="text-lg font-bold text-stone-800">새로운 원두 기록하기</h2>
+                <button onclick="closeModal()" class="text-stone-400 hover:text-stone-700 text-3xl leading-none font-light transition">&times;</button>
+            </div>
+            <div class="p-6 overflow-y-auto">
+                <form id="coffeeForm" class="space-y-6">
+                    <div class="col-span-2">
+                        <label class="block text-[11px] font-bold text-stone-500 mb-1.5 uppercase tracking-wider">로스터리 이름</label>
+                        <input type="text" id="roastery" required placeholder="예: 모모스커피, 블루보틀" class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-stone-400 focus:bg-white focus:ring-1 focus:ring-stone-400 transition text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold text-stone-500 mb-1.5 uppercase tracking-wider">원두 이름</label>
+                        <input type="text" id="beanName" required placeholder="예: 에티오피아 옐로우 허니" class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-stone-400 focus:bg-white focus:ring-1 focus:ring-stone-400 transition text-sm font-medium text-stone-900">
+                    </div>
+
+                    <div class="p-4 bg-stone-50 border border-stone-100 rounded-xl">
+                        <label class="block text-[11px] font-bold text-stone-500 mb-2.5 uppercase tracking-wider">원두 종류</label>
+                        <div class="flex gap-6">
+                            <label class="flex items-center gap-2 cursor-pointer text-sm font-semibold text-stone-700"><input type="radio" name="beanType" value="Single" checked class="w-4 h-4"> 싱글 오리진</label>
+                            <label class="flex items-center gap-2 cursor-pointer text-sm font-semibold text-stone-700"><input type="radio" name="beanType" value="Blend" class="w-4 h-4"> 블렌드</label>
+                        </div>
+                    </div>
+
+                    <div id="countryWrapper">
+                        <label class="block text-[11px] font-bold text-stone-500 mb-1.5 uppercase tracking-wider">생산국 (싱글오리진 전용)</label>
+                        <select id="country" class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-stone-400 focus:bg-white focus:ring-1 focus:ring-stone-400 transition text-sm font-medium">
+                            <option value="과테말라">과테말라 (Guatemala)</option>
+                            <option value="르완다">르완다 (Rwanda)</option>
+                            <option value="베트남">베트남 (Vietnam)</option>
+                            <option value="볼리비아">볼리비아 (Bolivia)</option>
+                            <option value="브라질">브라질 (Brazil)</option>
+                            <option value="에콰도르">에콰도르 (Ecuador)</option>
+                            <option value="에티오피아">에티오피아 (Ethiopia)</option>
+                            <option value="엘살바도르">엘살바도르 (El Salvador)</option>
+                            <option value="예멘">예멘 (Yemen)</option>
+                            <option value="온두라스">온두라스 (Honduras)</option>
+                            <option value="인도네시아">인도네시아 (Indonesia)</option>
+                            <option value="카메룬">카메룬 (Cameroon)</option>
+                            <option value="케냐">케냐 (Kenya)</option>
+                            <option value="코스타리카">코스타리카 (Costa Rica)</option>
+                            <option value="콜롬비아">콜롬비아 (Colombia)</option>
+                            <option value="탄자니아">탄자니아 (Tanzania)</option>
+                            <option value="태국">태국 (Thailand)</option>
+                            <option value="파나마">파나마 (Panama)</option>
+                            <option value="파푸아뉴기니">파푸아뉴기니 (Papua New Guinea)</option>
+                            <option value="페루">페루 (Peru)</option>
+                            <option value="기타">기타</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-[11px] font-bold text-stone-500 mb-1.5 uppercase tracking-wider">구매일</label>
+                        <input type="date" id="purchaseDate" class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-stone-400 focus:bg-white focus:ring-1 focus:ring-stone-400 transition text-sm text-stone-700">
+                    </div>
+
+                    <div>
+                        <label class="block text-[11px] font-bold text-stone-500 mb-1.5 uppercase tracking-wider">테이스팅 노트 / 정보</label>
+                        <textarea id="roasteryInfo" rows="2" placeholder="가공 방식, 컵 노트, 고도 등" class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-stone-400 focus:bg-white focus:ring-1 focus:ring-stone-400 transition text-sm"></textarea>
+                    </div>
+
+                    <div>
+                        <label class="block text-[11px] font-bold text-stone-500 mb-1.5 uppercase tracking-wider">주문 링크 (선택)</label>
+                        <input type="url" id="orderLink" placeholder="https://..." class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-stone-400 focus:bg-white focus:ring-1 focus:ring-stone-400 transition text-sm">
+                    </div>
+
+                    <div class="p-4 bg-stone-50 border border-stone-100 rounded-xl">
+                        <label class="block text-[11px] font-bold text-stone-500 mb-2 uppercase tracking-wider">원두 사진</label>
+                        <input type="file" id="photo" accept="image/*" class="w-full text-sm text-stone-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-white file:text-stone-700 hover:file:bg-stone-200 transition border border-stone-200 cursor-pointer">
+                        <p id="editPhotoNotice" class="text-xs text-amber-600 mt-2 font-medium hidden">💡 새로 첨부하지 않으면 기존 사진이 유지됩니다.</p>
+                    </div>
+
+                    <div class="border-t border-stone-200 pt-6">
+                        <label class="block text-[11px] font-bold text-stone-500 mb-2.5 uppercase tracking-wider">나의 평가 & 리뷰</label>
+                        <div class="flex items-center gap-3 mb-4 bg-white p-4 rounded-xl border border-stone-200 shadow-sm">
+                            <div class="flex gap-1 text-3xl" id="starBtns">
+                                <span class="star-btn cursor-pointer select-none transition hover:scale-110 text-stone-300" data-index="1">☆</span>
+                                <span class="star-btn cursor-pointer select-none transition hover:scale-110 text-stone-300" data-index="2">☆</span>
+                                <span class="star-btn cursor-pointer select-none transition hover:scale-110 text-stone-300" data-index="3">☆</span>
+                                <span class="star-btn cursor-pointer select-none transition hover:scale-110 text-stone-300" data-index="4">☆</span>
+                                <span class="star-btn cursor-pointer select-none transition hover:scale-110 text-stone-300" data-index="5">☆</span>
+                            </div>
+                            <span class="text-sm font-bold text-stone-500 ml-1" id="ratingLabel">0.5 / 5.0</span>
+                        </div>
+                        <textarea id="review" rows="3" required placeholder="테이스팅 평이나 다음에도 마실 의향이 있는지 기록해 보세요." class="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-stone-400 focus:bg-white focus:ring-1 focus:ring-stone-400 transition text-sm"></textarea>
+                    </div>
+
+                    <div class="pt-4 pb-2 flex gap-3">
+                        <button type="submit" id="submitBtn" class="flex-1 bg-stone-900 text-white py-3 rounded-xl font-semibold hover:bg-stone-800 transition shadow-md">원두 등록하기</button>
+                        <button type="button" id="cancelEditBtn" class="hidden flex-1 bg-white border border-stone-300 text-stone-700 py-3 rounded-xl font-semibold hover:bg-stone-50 transition">수정 취소</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, query, orderBy, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-storage.js";
+
+        const firebaseConfig = {
+            projectId: "coffee-web-508305",
+            appId: "1:870050897954:web:f195d033c1608f1ad5ea7b",
+            storageBucket: "coffee-web-508305.firebasestorage.app",
+            apiKey: "AIzaSyDfYAWl3rDxWFIb56nNImGTWTJ9KWXSeTk",
+            authDomain: "coffee-web-508305.firebaseapp.com",
+            messagingSenderId: "870050897954"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const storage = getStorage(app);
+
+        // 한글명 → alpha-2 코드
+        const countryCodes = {
+            "에티오피아":"et","케냐":"ke","콜롬비아":"co","브라질":"br",
+            "엘살바도르":"sv","과테말라":"gt","페루":"pe","에콰도르":"ec",
+            "코스타리카":"cr","르완다":"rw","베트남":"vn","인도네시아":"id",
+            "태국":"th","탄자니아":"tz","볼리비아":"bo","파나마":"pa",
+            "온두라스":"hn","파푸아뉴기니":"pg","카메룬":"cm","예멘":"ye"
+        };
+
+        // alpha-2 → ISO 3166-1 숫자코드 (TopoJSON)
+        const alpha2ToNumeric = {
+            "et":"231","ke":"404","co":"170","br":"076",
+            "sv":"222","gt":"320","pe":"604","ec":"218",
+            "cr":"188","rw":"646","vn":"704","id":"360",
+            "th":"764","tz":"834","bo":"068","pa":"591",
+            "hn":"340","pg":"598","cm":"120","ye":"887",
+            "kr":"410"
+        };
+
+        let currentRating = 0.5;
+        let allBeans = [];
+        let currentFilter = 'all';
+        let currentCountry = 'all';
+        let searchTerm = '';
+        let currentView = 'card';
+        let selectedMapNumId = null;
+        let mapReady = false;
+
+        // ===== 뷰 전환 =====
+        window.setView = function(view) {
+            currentView = view;
+            const isMap = view === 'map';
+
+            document.getElementById('cardViewSection').classList.toggle('hidden', isMap);
+            document.getElementById('mapViewSection').classList.toggle('hidden', !isMap);
+            document.getElementById('mobileFilterBar').classList.toggle('hidden', isMap);
+            document.getElementById('mobileSearchBar').classList.toggle('hidden', isMap);
+
+            const searchBarWrapper = document.getElementById('searchBarWrapper');
+            const sortWrapper = document.getElementById('sortWrapper');
+            if (searchBarWrapper) searchBarWrapper.classList.toggle('hidden', isMap);
+            if (sortWrapper) sortWrapper.classList.toggle('hidden', isMap);
+
+            const filterNav = document.getElementById('sideFilterNav');
+            filterNav.style.opacity = isMap ? '0.3' : '1';
+            filterNav.style.pointerEvents = isMap ? 'none' : 'auto';
+
+            // 사이드바 버튼 색상
+            document.getElementById('sideCardBtn').className = `flex-1 text-xs py-2 rounded-lg font-semibold transition ${!isMap ? 'bg-stone-700 text-white' : 'text-stone-400 hover:text-white hover:bg-stone-800'}`;
+            document.getElementById('sideMapBtn').className  = `flex-1 text-xs py-2 rounded-lg font-semibold transition ${isMap  ? 'bg-stone-700 text-white' : 'text-stone-400 hover:text-white hover:bg-stone-800'}`;
+
+            // 모바일 버튼 색상
+            document.getElementById('mobileCardBtn').className = `text-xs px-2.5 py-1.5 rounded font-semibold ${!isMap ? 'bg-stone-600 text-white' : 'bg-stone-700 text-stone-400'}`;
+            document.getElementById('mobileMapBtn').className  = `text-xs px-2.5 py-1.5 rounded font-semibold ${isMap  ? 'bg-stone-600 text-white' : 'bg-stone-700 text-stone-400'}`;
+
+            closeMapPanel();
+
+            if (isMap) {
+                if (!mapReady) { initMap(); mapReady = true; }
+                else refreshMapColors();
+            } else {
+                renderBeans();
+            }
+        };
+
+        // ===== D3 지도 초기화 =====
+        async function initMap() {
+            const container = document.getElementById('mapSvgContainer');
+            container.innerHTML = '<div class="flex items-center justify-center h-64 text-stone-400 text-sm animate-pulse">🗺️ 지도 불러오는 중...</div>';
+            try {
+                const width = container.clientWidth || 900;
+                const height = Math.round(width * 0.52);
+                container.style.height = height + 'px';
+
+                const world = await d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+                const countries = topojson.feature(world, world.objects.countries);
+                const activeMap = buildActiveMap();
+
+                const svg = d3.select('#mapSvgContainer').html('')
+                    .append('svg')
+                    .attr('width', '100%')
+                    .attr('height', height)
+                    .attr('viewBox', `0 0 ${width} ${height}`)
+                    .style('display', 'block')
+                    .style('cursor', 'grab');
+
+                // 줌/패닝용 그룹
+                const g = svg.append('g');
+
+                const projection = d3.geoNaturalEarth1()
+                    .scale(width / 6.3)
+                    .translate([width / 2, height / 2]);
+                const path = d3.geoPath().projection(projection);
+
+                g.selectAll('path')
+                    .data(countries.features)
+                    .enter().append('path')
+                    .attr('d', path)
+                    .attr('data-id', d => d.id)
+                    .attr('fill', d => activeMap[String(d.id)] ? '#7c5c3e' : '#e0d8d0')
+                    .attr('stroke', '#fff')
+                    .attr('stroke-width', 0.5)
+                    .style('cursor', d => activeMap[String(d.id)] ? 'pointer' : 'default')
+                    .on('click', function(event, d) {
+                        const numId = String(d.id);
+                        if (!activeMap[numId]) return;
+                        g.selectAll('path').attr('fill', p => {
+                            const pid = String(p.id);
+                            if (pid === numId) return '#3b2410';
+                            return activeMap[pid] ? '#7c5c3e' : '#e0d8d0';
+                        });
+                        selectedMapNumId = numId;
+                        showCountryPanel(numId, activeMap[numId]);
+                    })
+                    .on('mouseover', function(event, d) {
+                        const numId = String(d.id);
+                        if (activeMap[numId] && numId !== selectedMapNumId)
+                            d3.select(this).attr('fill', '#5a3e28');
+                    })
+                    .on('mouseout', function(event, d) {
+                        const numId = String(d.id);
+                        if (numId !== selectedMapNumId)
+                            d3.select(this).attr('fill', activeMap[numId] ? '#7c5c3e' : '#e0d8d0');
+                    });
+
+                // ===== 줌/패닝 =====
+                const zoom = d3.zoom()
+                    .scaleExtent([1, 12])  // 1배(원래) ~ 12배 확대
+                    .on('zoom', (event) => {
+                        g.attr('transform', event.transform);
+                        // 확대 시 국경선 얇게
+                        const k = event.transform.k;
+                        g.selectAll('path').attr('stroke-width', 0.5 / k);
+                        svg.style('cursor', event.transform.k > 1 ? 'grabbing' : 'grab');
+                    });
+
+                svg.call(zoom);
+
+                // 더블클릭 줌인
+                svg.on('dblclick.zoom', null); // 기본 더블클릭 줌 비활성화 (클릭 이벤트와 충돌 방지)
+
+                // 초기화 버튼 기능 노출
+                window._mapZoomReset = () => svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
+
+            } catch(e) {
+                console.error(e);
+                document.getElementById('mapSvgContainer').innerHTML = '<div class="flex items-center justify-center h-64 text-red-400 text-sm">지도를 불러오지 못했습니다.</div>';
+            }
+        }
+
+        function buildActiveMap() {
+            // numericId → { countryName, alpha2, beans[] }
+            const map = {};
+            allBeans.forEach(bean => {
+                let numId, displayName, alpha2;
+                if (bean.beanType === 'Blend') {
+                    numId = alpha2ToNumeric['kr'];
+                    displayName = '한국 (블렌드)';
+                    alpha2 = 'kr';
+                } else {
+                    alpha2 = countryCodes[bean.country];
+                    numId = alpha2 ? alpha2ToNumeric[alpha2] : null;
+                    displayName = bean.country;
+                }
+                if (!numId) return;
+                if (!map[numId]) map[numId] = { countryName: displayName, alpha2, beans: [] };
+                map[numId].beans.push(bean);
+            });
+            return map;
+        }
+
+        function refreshMapColors() {
+            const activeMap = buildActiveMap();
+            const svg = d3.select('#mapSvgContainer svg');
+            if (svg.empty()) { initMap(); mapReady = true; return; }
+            svg.select('g').selectAll('path')
+                .attr('fill', d => activeMap[String(d.id)] ? '#7c5c3e' : '#e0d8d0')
+                .style('cursor', d => activeMap[String(d.id)] ? 'pointer' : 'default');
+        }
+
+        function showCountryPanel(numId, info) {
+            selectedMapNumId = numId;
+            const flagHtml = info.alpha2 ? `<span class="fi fi-${info.alpha2} rounded shadow-sm inline-block w-5 h-3.5"></span>` : '';
+            document.getElementById('panelFlag').innerHTML = flagHtml;
+            document.getElementById('panelCountryName').textContent = info.countryName;
+            document.getElementById('panelBeanCount').textContent = `원두 ${info.beans.length}개`;
+            document.getElementById('mapHint').classList.add('hidden');
+
+            document.getElementById('panelBeanList').innerHTML = info.beans.map(bean => `
+                <button onclick="showBeanDetail('${bean.id}')" class="w-full text-left px-4 py-3 rounded-xl bg-stone-50 border border-stone-200 hover:bg-white hover:border-stone-400 hover:shadow-sm transition flex items-center justify-between group">
+                    <div class="min-w-0 flex-1">
+                        <p class="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-0.5">${bean.roastery}</p>
+                        <p class="text-sm font-bold text-stone-800 leading-snug truncate">${bean.beanName}</p>
+                    </div>
+                    <div class="flex items-center gap-1 ml-3 shrink-0">
+                        <span class="text-xs font-bold text-yellow-500">${bean.rating}</span>
+                        <span class="text-yellow-400 text-sm">★</span>
+                        <span class="text-stone-300 ml-1 group-hover:text-stone-500 transition">›</span>
+                    </div>
+                </button>
+            `).join('');
+
+            document.getElementById('mapBottomPanel').classList.add('open');
+        }
+
+        window.closeMapPanel = function() {
+            document.getElementById('mapBottomPanel').classList.remove('open');
+            selectedMapNumId = null;
+            document.getElementById('mapHint').classList.remove('hidden');
+            const activeMap = buildActiveMap();
+            const svg = d3.select('#mapSvgContainer svg');
+            if (!svg.empty()) svg.select('g').selectAll('path').attr('fill', d => activeMap[String(d.id)] ? '#7c5c3e' : '#e0d8d0');
+        };
+
+        // ===== 원두 상세 모달 =====
+        window.showBeanDetail = function(id) {
+            const bean = allBeans.find(b => b.id === id);
+            if (!bean) return;
+
+            const imgArea = document.getElementById('detailImageArea');
+            if (bean.imageUrl) { imgArea.classList.remove('hidden'); document.getElementById('detailImage').src = bean.imageUrl; }
+            else imgArea.classList.add('hidden');
+
+            document.getElementById('detailRoastery').textContent = bean.roastery;
+            document.getElementById('detailBeanName').textContent = bean.beanName;
+
+            const alpha2 = bean.beanType === 'Blend' ? 'kr' : countryCodes[bean.country];
+            const flagHtml = alpha2 ? `<span class="fi fi-${alpha2} rounded-sm w-4 h-3 inline-block"></span>` : '';
+            const label = bean.beanType === 'Blend' ? 'Blend 🇰🇷' : bean.country;
+            document.getElementById('detailCountryBadge').innerHTML = `${flagHtml} ${label}`;
+
+            const pBadge = document.getElementById('detailPurchaseBadge');
+            if (bean.purchaseDate) { pBadge.classList.remove('hidden'); pBadge.textContent = `🛒 ${bean.purchaseDate.substring(5)} 구매`; }
+            else pBadge.classList.add('hidden');
+
+            document.getElementById('detailStars').innerHTML = getStarHtml(bean.rating);
+            document.getElementById('detailRatingNum').textContent = `${bean.rating} / 5.0`;
+
+            const reviewArea = document.getElementById('detailReviewArea');
+            if (bean.review) { reviewArea.classList.remove('hidden'); document.getElementById('detailReview').textContent = `"${bean.review}"`; }
+            else reviewArea.classList.add('hidden');
+
+            const notesArea = document.getElementById('detailNotesArea');
+            if (bean.roasteryInfo) { notesArea.classList.remove('hidden'); document.getElementById('detailNotes').innerHTML = bean.roasteryInfo.replace(/\n/g,'<br>'); }
+            else notesArea.classList.add('hidden');
+
+            const orderArea = document.getElementById('detailOrderArea');
+            if (bean.orderLink) { orderArea.classList.remove('hidden'); document.getElementById('detailOrderLink').href = bean.orderLink; }
+            else orderArea.classList.add('hidden');
+
+            document.getElementById('detailEditBtn').onclick = () => { closeBeanDetail(); startEdit(id); };
+            document.getElementById('detailDeleteBtn').onclick = () => { closeBeanDetail(); deleteBean(id); };
+
+            const modal = document.getElementById('beanDetailModal');
+            const content = document.getElementById('beanDetailContent');
+            modal.classList.remove('hidden'); modal.classList.add('flex');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0'); modal.classList.add('opacity-100');
+                content.classList.remove('scale-95'); content.classList.add('scale-100');
+            }, 10);
+        };
+
+        window.closeBeanDetail = function() {
+            const modal = document.getElementById('beanDetailModal');
+            const content = document.getElementById('beanDetailContent');
+            modal.classList.remove('opacity-100'); modal.classList.add('opacity-0');
+            content.classList.remove('scale-100'); content.classList.add('scale-95');
+            setTimeout(() => { modal.classList.add('hidden'); modal.classList.remove('flex'); }, 300);
+        };
+
+        // ===== 입력 모달 =====
+        const formModal = document.getElementById('formModal');
+        const modalContent = document.getElementById('modalContent');
+
+        window.openModal = function() {
+            formModal.classList.remove('hidden'); formModal.classList.add('flex');
+            setTimeout(() => {
+                formModal.classList.remove('opacity-0'); formModal.classList.add('opacity-100');
+                modalContent.classList.remove('scale-95'); modalContent.classList.add('scale-100');
+            }, 10);
+        };
+
+        window.closeModal = function() {
+            if (currentEditId) { window.cancelEdit(); return; }
+            formModal.classList.remove('opacity-100'); formModal.classList.add('opacity-0');
+            modalContent.classList.remove('scale-100'); modalContent.classList.add('scale-95');
+            setTimeout(() => { formModal.classList.add('hidden'); formModal.classList.remove('flex'); }, 300);
+        };
+
+        // ===== 쇼핑 모달 =====
+        window.openShoppingModal = function() {
+            // 주요 로스터리 스마트스토어/공식몰 URL 매핑 (사용자 지정)
+            const storeUrls = {
+                "말릭 커피": "https://smartstore.naver.com/undercrema/category/1319cd65b8a2442d8e303ea1b436d9ec?cp=1",
+                "빈브라더스": "https://www.beanbrothers.co.kr/goods/goods_list.php?cateCd=007&sort=date&pageNum=18",
+                "웨이브인 로스터리": "https://smartstore.naver.com/wavincoffee/category/e63b7a7cd48a46a49fc81e8b0d96b966?st=POPULAR&dt=IMAGE&page=1&size=40",
+                "웨이브빈 로스터리": "https://smartstore.naver.com/wavincoffee/category/e63b7a7cd48a46a49fc81e8b0d96b966?st=POPULAR&dt=IMAGE&page=1&size=40",
+                "버드클럽": "https://smartstore.naver.com/birdlandcoffeeclub",
+                "트레커스빈": "https://smartstore.naver.com/trekkersbean/category/d841842218904dbb9a9d9b42073d11f9?cp=1",
+                "커피화": "https://smartstore.naver.com/coffeehwa/category/b485439d44374035b49b50b75ad0af09?cp=1",
+                "모모스커피": "https://brand.naver.com/momoscoffee/category/8f13395adfc04f36944d87369b656045?cp=1",
+                "파이오니어": "https://smartstore.naver.com/pioneercoffee/category/6ad8ee49e84948108ae18a1b61dacf9d?cp=1",
+                "58MM": "https://smartstore.naver.com/58coffee/category/9444453422e7411087a65624feeff23b?cp=1",
+                "로스터리 향초": "https://smartstore.naver.com/hyangcho/category/86716664ff39400692d60caad6b3ea97?cp=1"
+            };
+
+            // DB에 있는 로스터리 + 고정 로스터리(향초 등) 합치기
+            const dbRoasteries = allBeans.map(b => b.roastery).filter(Boolean);
+            const predefined = Object.keys(storeUrls).filter(k => k !== "웨이브빈 로스터리"); // 중복 표시 방지
+            const roasteries = [...new Set([...dbRoasteries, ...predefined])].sort();
+
+            const listEl = document.getElementById('shoppingRoasteryList');
+            
+            if (roasteries.length === 0) {
+                listEl.innerHTML = `<div class="text-center py-10 text-stone-500 font-medium text-sm">아직 등록된 로스터리가 없습니다.</div>`;
+            } else {
+                listEl.innerHTML = `<div class="flex flex-col gap-2">` + roasteries.map(r => {
+                    const matchKey = Object.keys(storeUrls).find(k => r.toUpperCase().includes(k.toUpperCase()));
+                    const url = matchKey ? storeUrls[matchKey] : `https://search.naver.com/search.naver?query=${encodeURIComponent(r + ' 스마트스토어')}`;
+                    
+                    return `
+                    <a href="${url}" target="_blank" rel="noopener noreferrer" 
+                       class="bg-white p-4 rounded-xl shadow-sm border border-stone-200 hover:border-green-400 hover:shadow-md transition flex items-center justify-between group">
+                        <span class="font-bold text-stone-800">${r}</span>
+                        <span class="text-xs font-semibold bg-green-50 text-green-600 px-2 py-1 rounded border border-green-100 group-hover:bg-green-500 group-hover:text-white transition">스토어 방문 ›</span>
+                    </a>
+                `}).join('') + `</div>`;
+            }
+
+            const modal = document.getElementById('shoppingModal');
+            const content = document.getElementById('shoppingContent');
+            modal.classList.remove('hidden'); modal.classList.add('flex');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0'); modal.classList.add('opacity-100');
+                content.classList.remove('scale-95'); content.classList.add('scale-100');
+            }, 10);
+        };
+
+        window.closeShoppingModal = function() {
+            const modal = document.getElementById('shoppingModal');
+            const content = document.getElementById('shoppingContent');
+            modal.classList.remove('opacity-100'); modal.classList.add('opacity-0');
+            content.classList.remove('scale-100'); content.classList.add('scale-95');
+            setTimeout(() => { modal.classList.add('hidden'); modal.classList.remove('flex'); }, 300);
+        };
+
+        // ===== 토스트 =====
+        function showToast(message, type = 'success') {
+            const colors = { success: 'bg-stone-900 text-white', error: 'bg-red-600 text-white' };
+            const icons = { success: '✓', error: '✕' };
+            const el = document.createElement('div');
+            el.className = `toast-enter flex items-center gap-3 px-5 py-3 rounded-xl shadow-xl text-sm font-medium pointer-events-auto ${colors[type]} border border-white/10`;
+            el.innerHTML = `<span class="bg-white/20 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">${icons[type]}</span><span>${message}</span>`;
+            document.getElementById('toastContainer').appendChild(el);
+            setTimeout(() => { el.classList.replace('toast-enter','toast-leave'); el.addEventListener('animationend', () => el.remove()); }, 3000);
+        }
+
+        // ===== 통계 =====
+        function updateStats() {
+            document.getElementById('statTotal').textContent = allBeans.length;
+            if (!allBeans.length) { document.getElementById('statAvgRating').textContent = '-'; document.getElementById('statTopCountry').textContent = '-'; return; }
+            const avg = (allBeans.reduce((s,b) => s+(b.rating||0),0)/allBeans.length).toFixed(1);
+            document.getElementById('statAvgRating').textContent = avg;
+            const cc = {};
+            allBeans.filter(b=>b.beanType==='Single'&&b.country).forEach(b=>{cc[b.country]=(cc[b.country]||0)+1;});
+            const top = Object.entries(cc).sort((a,b)=>b[1]-a[1])[0];
+            const topCode = top ? countryCodes[top[0]] : null;
+            document.getElementById('statTopCountry').innerHTML = top ? `${topCode?`<span class="fi fi-${topCode} rounded-sm w-5 h-3.5 inline-block mr-1.5 shadow-sm"></span>`:''}${top[0]}` : '-';
+        }
+
+        let currentEditId = null;
+        let existingImageUrl = "";
+
+        // 원두 종류 토글
+        document.querySelectorAll('input[name="beanType"]').forEach(radio => {
+            radio.addEventListener('change', e => {
+                const w = document.getElementById('countryWrapper');
+                if (e.target.value==='Blend') { w.style.opacity='0.4'; w.style.pointerEvents='none'; document.getElementById('country').value='기타'; }
+                else { w.style.opacity='1'; w.style.pointerEvents='auto'; }
+            });
+        });
+
+        // ===== 별점 버튼 (반개 지원) =====
+        const starBtns = document.querySelectorAll('#starBtns .star-btn');
+        const clickState = [0,0,0,0,0];
+
+        starBtns.forEach((btn, idx) => {
+            btn.addEventListener('click', () => {
+                const prev = clickState[idx];
+                for (let i=0;i<idx;i++) clickState[i]=2;
+                for (let i=idx+1;i<5;i++) clickState[i]=0;
+                clickState[idx] = prev===1 ? 2 : 1;
+                updateStarUI();
+            });
+        });
+
+        function getStarHtml(rating) {
+            let html = '';
+            for (let i=1;i<=5;i++) {
+                if (rating>=i) html += '<span class="text-yellow-400">★</span>';
+                else if (rating===i-0.5) html += '<span class="relative inline-block"><span class="text-stone-200">★</span><span class="absolute left-0 top-0 overflow-hidden text-yellow-400" style="width:50%">★</span></span>';
+                else html += '<span class="text-stone-200">★</span>';
+            }
+            return html;
+        }
+
+        function updateStarUI(rating) {
+            if (typeof rating === 'number') {
+                for (let i=0;i<5;i++) {
+                    if (rating>=i+1) clickState[i]=2;
+                    else if (rating===i+0.5) clickState[i]=1;
+                    else clickState[i]=0;
+                }
+            }
+            let r=0;
+            for (let i=0;i<5;i++) { if(clickState[i]===2) r+=1; else if(clickState[i]===1) r+=0.5; }
+            currentRating = r || 0.5;
+            starBtns.forEach((btn,i) => {
+                if (clickState[i]===2) { btn.textContent='★'; btn.className='star-btn cursor-pointer select-none transition hover:scale-110 text-yellow-400'; }
+                else if (clickState[i]===1) { btn.innerHTML='<span class="relative inline-block"><span class="text-stone-200">★</span><span class="absolute left-0 top-0 overflow-hidden text-yellow-400" style="width:50%">★</span></span>'; btn.className='star-btn cursor-pointer select-none transition hover:scale-110'; }
+                else { btn.textContent='☆'; btn.className='star-btn cursor-pointer select-none transition hover:scale-110 text-stone-300'; }
+            });
+            document.getElementById('ratingLabel').textContent = currentRating.toFixed(1) + ' / 5.0';
+        }
+
+        // ===== 데이터 로드 =====
+        async function fetchBeans() {
+            try {
+                const q = query(collection(db,"beans"), orderBy("createdAt","desc"));
+                const snap = await getDocs(q);
+                allBeans = [];
+                snap.forEach(d => allBeans.push({ id:d.id, ...d.data() }));
+                updateStats();
+                if (currentView==='card') renderBeans();
+                else refreshMapColors();
+            } catch(e) {
+                console.error(e);
+                document.getElementById('archiveGrid').innerHTML = `<p class="text-red-500 col-span-full text-center py-10">데이터를 불러오지 못했습니다.</p>`;
+            }
+        }
+
+        // ===== 카드 렌더링 =====
+        function renderBeans() {
+            const grid = document.getElementById('archiveGrid');
+            const sortOrder = document.getElementById(window.innerWidth<768?'sortOrderMobile':'sortOrder')?.value || 'latest';
+
+            renderCountryChips(); updateStats();
+
+            let filtered = allBeans.filter(bean => {
+                if (currentFilter==='single') {
+                    if (bean.beanType!=='Single') return false;
+                    if (currentCountry!=='all' && bean.country!==currentCountry) return false;
+                } else if (currentFilter==='blend') {
+                    if (bean.beanType!=='Blend') return false;
+                }
+                if (searchTerm) {
+                    const q = searchTerm.toLowerCase();
+                    return (bean.roastery||'').toLowerCase().includes(q)||(bean.beanName||'').toLowerCase().includes(q)||(bean.country||'').toLowerCase().includes(q);
+                }
+                return true;
+            });
+
+            if (sortOrder==='stars') filtered.sort((a,b)=>b.rating-a.rating);
+            else if (sortOrder==='purchase') filtered.sort((a,b)=>{ if(!a.purchaseDate&&!b.purchaseDate) return 0; if(!a.purchaseDate) return 1; if(!b.purchaseDate) return -1; return new Date(b.purchaseDate)-new Date(a.purchaseDate); });
+
+            if (!filtered.length) {
+                grid.innerHTML = searchTerm
+                    ? `<div class="col-span-full text-center py-20 flex flex-col items-center"><div class="text-5xl mb-4 opacity-30">🔍</div><p class="text-stone-500 font-medium text-lg">검색 결과가 없습니다.</p></div>`
+                    : `<div class="col-span-full text-center py-24 flex flex-col items-center bg-white border border-stone-200 border-dashed rounded-2xl"><div class="text-5xl mb-4 opacity-50">☕</div><p class="text-stone-600 font-semibold text-lg mb-2">아직 기록된 원두가 없네요!</p><button onclick="openModal()" class="px-5 py-2 bg-stone-900 text-white rounded-lg text-sm font-medium shadow-md hover:bg-stone-800 transition">첫 원두 기록하기</button></div>`;
+                return;
+            }
+
+            grid.innerHTML = filtered.map(bean => {
+                const alpha2 = bean.beanType==='Blend' ? 'kr' : countryCodes[bean.country];
+                const flagHtml = alpha2 ? `<span class="fi fi-${alpha2} rounded shadow-sm w-4 h-3 inline-block"></span>` : `<span class="text-sm">☕</span>`;
+                const countryLabel = bean.beanType==='Blend' ? 'Blend 🇰🇷' : bean.country;
+                return `
+                    <div class="bg-white rounded-2xl border border-stone-200 overflow-hidden hover:border-stone-400 hover:shadow-lg transition-all duration-300 flex flex-col group cursor-pointer" onclick="showBeanDetail('${bean.id}')">
+                        ${bean.imageUrl ? `<div class="h-48 shrink-0 bg-stone-100 w-full overflow-hidden border-b border-stone-100"><img src="${bean.imageUrl}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500"></div>` : ''}
+                        <div class="p-5 flex-1">
+                            <p class="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-2">${bean.roastery}</p>
+                            <h3 class="text-[17px] font-bold text-stone-900 leading-tight mb-3 group-hover:text-stone-600 transition line-clamp-2">${bean.beanName}</h3>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="flex items-center gap-1.5 text-xs font-semibold text-stone-600 bg-stone-100 px-2 py-1 rounded-md">${flagHtml} ${countryLabel}</span>
+                                ${bean.purchaseDate ? `<span class="text-[10px] font-medium text-stone-400 bg-stone-50 px-2 py-1 rounded-md border border-stone-100">🛒 ${bean.purchaseDate.substring(5)} 구매</span>` : ''}
+                            </div>
+                        </div>
+                        <div class="px-5 py-4 bg-stone-50/50 border-t border-stone-100 shrink-0">
+                            <div class="text-[15px] tracking-widest mb-1.5">${getStarHtml(bean.rating)}</div>
+                            <p class="text-xs text-stone-600 italic line-clamp-2 leading-relaxed">"${bean.review}"</p>
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+
+        // ===== 수정 =====
+        window.startEdit = function(id) {
+            const bean = allBeans.find(b=>b.id===id); if(!bean) return;
+            currentEditId=id; existingImageUrl=bean.imageUrl||"";
+            document.getElementById('formTitle').innerText="원두 정보 수정하기";
+            document.getElementById('roastery').value=bean.roastery;
+            document.getElementById('beanName').value=bean.beanName;
+            document.querySelectorAll('input[name="beanType"]').forEach(r=>{if(r.value===bean.beanType)r.checked=true;});
+            const w=document.getElementById('countryWrapper');
+            if(bean.beanType==='Blend'){w.style.opacity='0.4';w.style.pointerEvents='none';document.getElementById('country').value='기타';}
+            else{w.style.opacity='1';w.style.pointerEvents='auto';document.getElementById('country').value=bean.country||'기타';}
+            document.getElementById('roasteryInfo').value=bean.roasteryInfo||"";
+            document.getElementById('purchaseDate').value=bean.purchaseDate||"";
+            document.getElementById('orderLink').value=bean.orderLink||"";
+            document.getElementById('review').value=bean.review;
+            currentRating=bean.rating; updateStarUI(currentRating);
+            document.getElementById('submitBtn').innerText="변경사항 저장";
+            document.getElementById('cancelEditBtn').classList.remove('hidden');
+            document.getElementById('editPhotoNotice').classList.remove('hidden');
+            openModal();
+        };
+
+        window.cancelEdit = function() {
+            currentEditId=null; existingImageUrl="";
+            document.getElementById('coffeeForm').reset();
+            document.getElementById('formTitle').innerText="새로운 원두 기록하기";
+            document.getElementById('submitBtn').innerText="원두 등록하기";
+            document.getElementById('cancelEditBtn').classList.add('hidden');
+            document.getElementById('editPhotoNotice').classList.add('hidden');
+            document.getElementById('countryWrapper').style.opacity='1';
+            document.getElementById('countryWrapper').style.pointerEvents='auto';
+            currentRating=0.5; updateStarUI(0.5);
+            formModal.classList.remove('opacity-100'); formModal.classList.add('opacity-0');
+            modalContent.classList.remove('scale-100'); modalContent.classList.add('scale-95');
+            setTimeout(()=>{formModal.classList.add('hidden');formModal.classList.remove('flex');},300);
+        };
+        document.getElementById('cancelEditBtn').addEventListener('click', window.cancelEdit);
+
+        // ===== 삭제 =====
+        window.deleteBean = async function(id) {
+            if(!confirm("이 기록을 삭제하시겠습니까? 되돌릴 수 없습니다.")) return;
+            try { await deleteDoc(doc(db,"beans",id)); showToast("삭제 완료되었습니다."); await fetchBeans(); }
+            catch(e) { showToast('삭제 실패','error'); }
+        };
+
+        // ===== 폼 제출 =====
+        document.getElementById('coffeeForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled=true; submitBtn.innerText="저장 중...";
+            const roastery=document.getElementById('roastery').value;
+            const beanName=document.getElementById('beanName').value;
+            const beanType=document.querySelector('input[name="beanType"]:checked').value;
+            const country=document.getElementById('country').value;
+            const roasteryInfo=document.getElementById('roasteryInfo').value;
+            const purchaseDate=document.getElementById('purchaseDate').value;
+            const orderLink=document.getElementById('orderLink').value;
+            const review=document.getElementById('review').value;
+            const photoFile=document.getElementById('photo').files[0];
+            let imageUrl=currentEditId?existingImageUrl:"";
+            try {
+                if(photoFile){
+                    const sRef=ref(storage,`coffee_images/${Date.now()}_${photoFile.name}`);
+                    const snap=await uploadBytes(sRef,photoFile);
+                    imageUrl=await getDownloadURL(snap.ref);
+                }
+                const beanData={roastery,beanName,beanType,country,roasteryInfo,purchaseDate,orderLink,review,rating:currentRating,imageUrl,updatedAt:new Date().toISOString()};
+                if(currentEditId){
+                    await updateDoc(doc(db,"beans",currentEditId),beanData);
+                    window.cancelEdit(); showToast('수정이 완료되었습니다!');
+                } else {
+                    beanData.createdAt=new Date().toISOString();
+                    await addDoc(collection(db,"beans"),beanData);
+                    document.getElementById('coffeeForm').reset();
+                    currentRating=0.5; updateStarUI(0.5);
+                    window.closeModal(); showToast('새 원두가 아카이브에 등록되었습니다.');
+                }
+                await fetchBeans();
+                if(currentView==='map'){mapReady=false;refreshMapColors();}
+            } catch(err){ console.error(err); showToast('저장에 실패했습니다.','error'); }
+            finally{ submitBtn.disabled=false; submitBtn.innerText=currentEditId?"변경사항 저장":"원두 등록하기"; }
+        });
+
+        // ===== 필터 =====
+        ['filterAll','filterAllMobile'].forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('click',()=>toggleFilter('all'));});
+        ['filterSingle','filterSingleMobile'].forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('click',()=>toggleFilter('single'));});
+        ['filterBlend','filterBlendMobile'].forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('click',()=>toggleFilter('blend'));});
+        ['sortOrder','sortOrderMobile'].forEach(id=>{
+            const el=document.getElementById(id);
+            if(el)el.addEventListener('change',e=>{
+                const otherId=id==='sortOrder'?'sortOrderMobile':'sortOrder';
+                const other=document.getElementById(otherId); if(other)other.value=e.target.value;
+                renderBeans();
+            });
+        });
+        ['searchInput','searchInputMobile'].forEach(id=>{
+            const el=document.getElementById(id);
+            if(el)el.addEventListener('input',e=>{
+                searchTerm=e.target.value.trim();
+                const otherId=id==='searchInput'?'searchInputMobile':'searchInput';
+                const other=document.getElementById(otherId); if(other)other.value=searchTerm;
+                renderBeans();
+            });
+        });
+
+        function toggleFilter(type) {
+            currentFilter=type; currentCountry='all';
+            ['filterAll','filterSingle','filterBlend'].forEach(id=>{const el=document.getElementById(id);if(el)el.className="w-full text-left px-3 py-2 rounded-lg text-sm font-medium text-stone-400 hover:text-white hover:bg-stone-800 transition";});
+            const activeIds={all:'filterAll',single:'filterSingle',blend:'filterBlend'};
+            const ab=document.getElementById(activeIds[type]);if(ab)ab.className="w-full text-left px-3 py-2 rounded-lg text-sm font-medium bg-stone-800 text-white transition";
+            ['filterAllMobile','filterSingleMobile','filterBlendMobile'].forEach(id=>{const el=document.getElementById(id);if(el)el.className="shrink-0 px-4 py-1.5 rounded-full text-sm font-medium bg-stone-100 text-stone-600 border border-stone-200";});
+            const mActiveIds={all:'filterAllMobile',single:'filterSingleMobile',blend:'filterBlendMobile'};
+            const mb=document.getElementById(mActiveIds[type]);if(mb)mb.className="shrink-0 px-4 py-1.5 rounded-full text-sm font-medium bg-stone-900 text-white shadow-sm border border-stone-900";
+            document.getElementById('countryChipBar').classList.toggle('hidden',type!=='single');
+            renderBeans();
+        }
+
+        function renderCountryChips() {
+            const chipBar=document.getElementById('countryChipBar');
+            const chipsWrap=document.getElementById('countryChips');
+            if(currentFilter!=='single'){chipBar.classList.add('hidden');return;}
+            chipBar.classList.remove('hidden');
+            const countries=[...new Set(allBeans.filter(b=>b.beanType==='Single'&&b.country).map(b=>b.country))].sort((a,b)=>a.localeCompare(b,'ko'));
+            const allChip=`<button onclick="setCountryFilter('all')" class="px-3 py-1.5 rounded-full text-xs font-semibold transition shadow-sm ${currentCountry==='all'?'bg-stone-900 text-white':'bg-white border border-stone-200 text-stone-600 hover:bg-stone-50'}">모든 국가</button>`;
+            const chips=countries.map(c=>{
+                const code=countryCodes[c]; const active=currentCountry===c;
+                return `<button onclick="setCountryFilter('${c}')" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition shadow-sm ${active?'bg-stone-900 text-white border border-stone-900':'bg-white border border-stone-200 text-stone-600 hover:bg-stone-50'}">${code?`<span class="fi fi-${code} rounded-sm w-4 h-3 inline-block"></span>`:''} ${c}</button>`;
+            }).join('');
+            chipsWrap.innerHTML=allChip+chips;
+        }
+
+        window.setCountryFilter = function(c){currentCountry=c;renderBeans();};
+
+        fetchBeans();
+    </script>
+</body>
+</html>
